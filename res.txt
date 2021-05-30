@@ -1,22 +1,17 @@
---------------------L1--------------------
-access count: 706290
-access time: 2118870
-hit count: 693828
-miss count: 12462
-miss rate: 0.017644
+-----------------L1 core[0]-----------------
+access count: 99696
+hit count: 98135
+miss count: 1561
+miss rate: 0.015658
 --------------------L2--------------------
-access count: 12462
-access time: 217180
-hit count: 7016
-miss count: 5446
-miss rate: 0.437009
+access count: 1561
+hit count: 411
+miss count: 1150
+miss rate: 0.736707
 --------------------M--------------------
-access count: 5446
-access time: 544600
-hit count: 5446
+access count: 1150
+hit count: 1150
 miss count: 0
 miss rate: 0.000000
 
-Total memory access count: 706396
-Total memory access time: 2880650 cycles
-AMAT: 3.947514
+Total memory access count: 99563

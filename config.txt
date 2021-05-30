@@ -8,3 +8,6 @@ L2 associativity: 8
 L2 set num: 16384
 L2 write through: 0
 L2 write allocate: 1
+Replace policy: LRU
+If Prefetch: 1
+Num Cores: 1

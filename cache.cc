@@ -1,5 +1,6 @@
 #include "cache.h"
 #include "def.h"
+#include "co_filter.h"
 #include <iostream>
 #include <cstring>
 #include <utility>
@@ -17,15 +18,19 @@ inline unsigned long long Cache::getTag(unsigned long long addr) {
     return addr >> (config_.set_bit + config_.block_bit);
 }
 
+inline unsigned long long Cache::getTagAndSet(unsigned long long addr) {
+    return addr >> config_.block_bit;
+}
+
 inline int Cache::getBlockID(unsigned long long addr) {
     int mask = (1 << config_.block_bit) - 1;
     return addr & mask;
 }
 
 void Cache::init() {
-    if (replacePolicy == "LRU") {
+    if (config_.replacePolicy == "LRU") {
         LRU = vector<vector<unsigned long long> >(config_.set_num, vector<unsigned long long>());
-    } else if (replacePolicy == "LFU") {
+    } else if (config_.replacePolicy == "LFU" || config_.replacePolicy == "FIFO") {
         for (int i = 0; i < config_.set_num; i++) {
             for (int j = 0; j < config_.associativity; j++) {
                 sets[i].line[j].visit_count = 0;
@@ -48,77 +53,59 @@ void Cache::SetConfig(CacheConfig cc) {
     }
 }
 
+//content is write content or read buffer
 void Cache::HandleRequest(uint64_t addr, int bytes, int read,
-                          char *content, int &hit, int &totalCycle, int ifPrefetch, int ifWriteDirty) {
+                          char *content, int ifPrefetch, int ifWriteDirty) {
     if(!ifPrefetch && !ifWriteDirty) {
         total_count++;
         stats_.access_counter++;
     }
-    // Bypass?
-    if (!BypassDecision(addr)) {
-        PartitionAlgorithm();
-        if(!ifPrefetch) {
-            totalCycle += latency_.bus_latency + latency_.hit_latency;
-            stats_.access_time += latency_.bus_latency + latency_.hit_latency;
+    /*if (getSetID(addr) == 40 && stats_.miss_num > 2000) {
+        printf("0x%llx %d\n", addr, stats_.miss_num);
+        for (int j = 0; j < config_.associativity; j++) {
+            printf("%d 0x%llx %d\n", j, sets[40].line[j].tag, sets[40].line[j].valid);
         }
-        pair<int, int> tmpRes = ReplaceDecision(addr);
+        cout<<endl;
+    }*/
+    /*if (addr == 0x00007f17faf5fa10 && stats_.miss_num == 2221) {
+        for (int j = 0; j < config_.associativity; j++) {
+            printf("%d 0x%llx %d\n", j, sets[40].line[j].tag, sets[40].line[j].valid);
+        }
+        cout<<endl;
+    }*/
+//if (addr == 0x00007f17fad83554) cout<<"prefetching\n";
+    pair<int, int> tmpRes = ReplaceDecision(addr);
 
         if(tmpRes.first) {
+            //if (addr == 0x00007f17fad83554) cout<<"miss\n";
             if(!ifPrefetch && !ifWriteDirty) stats_.miss_num++;
-            ReplaceAlgorithm(addr, bytes, read, content, hit, totalCycle, ifPrefetch);
+            ReplaceAlgorithm(addr, bytes, read, content, ifPrefetch);
         } else {
-            // go here cout<<"2\n";
+            //if (addr == 0x00007f17fad83554) cout<<"hit\n";
+            if (layer == 1) snoop.hitSpread(core, read, addr, ifPrefetch);
             int setID = getSetID(addr);
             int lineID = tmpRes.second;
             int blockID = getBlockID(addr);
-            if(!ifPrefetch) {
-                hit++;
-            }
             
             if(read == 1) {
                 memcpy(content, sets[setID].line[lineID].block + blockID, bytes);
             }
             if(read == 0) {
                 memcpy(sets[setID].line[lineID].block + blockID, content, bytes);
-                if(!config_.write_through) {
-                    sets[setID].line[lineID].dirty = 1;
-                } else {
-                    lower_->HandleRequest(addr, bytes, read, content, hit, totalCycle, ifPrefetch, 0);// dirty add L2 hit?
-                }
+                sets[setID].line[lineID].dirty = 1;
             }
         }
-        
-        if(!ifPrefetch && PrefetchDecision(addr, tmpRes.first)) {
-            stats_.prefetch_num++;
-            PrefetchAlgorithm(addr, tmpRes.first);
-        }
-        return;
+    //if (addr == 0x00007f17fad83514) cout<<"herehere\n";
+    if(!ifPrefetch && PrefetchDecision(addr, tmpRes.first)) {
+        stats_.prefetch_num++;
+        PrefetchAlgorithm(addr, tmpRes.first);
     }
-    if(!ifPrefetch) {
-        // don't add hit latency
-        stats_.access_time += latency_.bus_latency;
-        stats_.bypass_num++;
-        totalCycle += latency_.bus_latency;
-    }
-}
-
-int Cache::BypassDecision(unsigned long long addr) {
-    /*if(config_.size == 32768) return 0;
-    int setID = getSetID(addr);
-    int blockID = getBlockID(addr);
-    unsigned long long tag = getTag(addr);
-    for(int j = 0; j < config_.associativity; j++) {
-        if(!sets[setID].line[j].valid) return 0;
-    }
-    return !bypassTable.count(tag);*/
-    return 0;
-}
-
-void Cache::PartitionAlgorithm() {
+    //if (addr == 0x00007f17fad83514) cout<<"prefetch done\n";
+    return;
 }
 
 void Cache::HitUpdate(int setID, int lineID) {
-    if (replacePolicy == "LRU") {
+    if (config_.replacePolicy == "LRU") {
         for (int k = 0; k < LRU[setID].size(); k++) {
             if (LRU[setID][k] == lineID) {
                 LRU[setID].erase(LRU[setID].begin() + k);
@@ -127,8 +114,11 @@ void Cache::HitUpdate(int setID, int lineID) {
             }
         }
     }
-    if (replacePolicy == "LFU") {
+    if (config_.replacePolicy == "LFU") {
         sets[setID].line[lineID].visit_count++;
+        return;
+    }
+    if (config_.replacePolicy == "FIFO") {
         return;
     }
 }
@@ -139,7 +129,7 @@ pair<int, int> Cache::ReplaceDecision(unsigned long long addr) {
     int setID = getSetID(addr);
     int res2 = -1;
     for(int j = 0; j < config_.associativity; j++) {
-        if(sets[setID].line[j].tag == tmpTag && sets[setID].line[j].valid) {
+        if(sets[setID].line[j].tag == tmpTag && sets[setID].line[j].valid != INVALID) {
             res2 = j;
             HitUpdate(setID, j);
             return make_pair(0, j);
@@ -149,7 +139,7 @@ pair<int, int> Cache::ReplaceDecision(unsigned long long addr) {
     return make_pair(1, -1);
 }
 
-void Cache::selectVictimOfLRU(int setID, int& res) {
+void Cache::selectVictimOfLRU(int setID, int &res) {
     if(res == -1) {
         int victimLine = LRU[setID].back();
         unsigned long long outTag = sets[setID].line[victimLine].tag;
@@ -161,77 +151,106 @@ void Cache::selectVictimOfLRU(int setID, int& res) {
         if(LRU[setID].size() < config_.associativity) {
             LRU[setID].insert(LRU[setID].begin(), res);
         } else {
-            res = LRU[setID].back();
+            int id = -1;
+            for (int k = 0; k < config_.associativity; k++) {
+                if (LRU[setID][k] == res) {
+                    id = k;
+                    break;
+                }
+            }
+            LRU[setID].erase(LRU[setID].begin() + id);
+            LRU[setID].insert(LRU[setID].begin(), res);
+            /*res = LRU[setID].back();
             unsigned long long outTag = sets[setID].line[res].tag;
             LRU[setID].pop_back();
             LRU[setID].insert(LRU[setID].begin(), res);
-            stats_.replace_num++;
+            stats_.replace_num++;*/
         }
     }
     
 }
 
-void Cache::selectVictimOfLFU(int setID, int& res) {
+void Cache::selectVictimOfLFU(int setID, int &res) {
     if (res == -1) {
-        int min_counter = -1, min_way = 0;
-        
+        int min_counter = 0;
+        for (int j = 0; j < config_.associativity; j++) {
+            if (j == 0 || sets[setID].line[j].visit_count < min_counter) {
+                res = j;
+                min_counter = sets[setID].line[j].visit_count;
+            }
+        }
     }
+    sets[setID].line[res].visit_count = 1;
+}
+
+void Cache::selectVictimOfFIFO(int setID, int &res) {
+    if (res == -1) {
+        int min_counter = 0;
+        for (int j = 0; j < config_.associativity; j++) {
+            if (j == 0 || sets[setID].line[j].visit_count < min_counter) {
+                res = j;
+                min_counter = sets[setID].line[j].visit_count;
+            }
+        }
+    }
+    sets[setID].line[res].visit_count = stats_.access_counter;
 }
 
 int Cache::selectVictim(int setID) {
     int res = -1;
     for(int j = 0; j < config_.associativity; j++) {
-        if(!sets[setID].line[j].valid) {
+        if(sets[setID].line[j].valid == INVALID) {
             res = j;
             break;
         }
     }
-    /*if(res == -1) {
-        int victimLine = LRU[setID].back();
-        unsigned long long outTag = sets[setID].line[victimLine].tag;
-        LRU[setID].pop_back();
-        LRU[setID].insert(LRU[setID].begin(), victimLine);
-        res = victimLine;
-        stats_.replace_num++;
-    } else {
-        if(LRU[setID].size() < config_.associativity) {
-            LRU[setID].insert(LRU[setID].begin(), res);
-        } else {
-            res = LRU[setID].back();
-            unsigned long long outTag = sets[setID].line[res].tag;
-            LRU[setID].pop_back();
-            LRU[setID].insert(LRU[setID].begin(), res);
-            stats_.replace_num++;
-        }
-    }*/
+    if (config_.replacePolicy == "LRU") selectVictimOfLRU(setID, res);
+    if (config_.replacePolicy == "LFU") selectVictimOfLFU(setID, res);
+    if (config_.replacePolicy == "FIFO") selectVictimOfFIFO(setID, res);
     return res;
 }
 
 void Cache::ReplaceAlgorithm(uint64_t addr, int bytes, int read,
-                            char *content, int &hit, int &totalCycle, int ifPrefetch){
-    if(!read && !config_.write_allocate) {
-        lower_->HandleRequest(addr, bytes, read, content, hit, totalCycle, ifPrefetch, 0);
-        return ;
-    }
+                            char *content, int ifPrefetch){
     
     unsigned long long tmpTag = getTag(addr);
+
     int setID = getSetID(addr);
     int blockID = getBlockID(addr);
     int lineID = selectVictim(setID);
-    
-    if(sets[setID].line[lineID].dirty) {
+    /*if (core == 1 && addr == 0x00007f17fa7896a0 && stats_.access_counter == 653) {
+        cout<<"here\n";
+    }*/
+    if (sets[setID].line[lineID].dirty) {
+        //printf("write dirty\n");
         unsigned long long dirtyTag = sets[setID].line[lineID].tag;
         unsigned long long dirtyAddr = (dirtyTag << (config_.set_bit + config_.block_bit)) + (setID << config_.block_bit);
-        lower_->HandleRequest(dirtyAddr, config_.block_size, 0, (char*)sets[setID].line[lineID].block, hit, totalCycle, ifPrefetch, 1);
+        lower_->HandleRequest(dirtyAddr, config_.block_size, 0, (char*)sets[setID].line[lineID].block, ifPrefetch, 1);
     }
     
+    if (layer == 1 && sets[setID].line[lineID].valid != INVALID) {
+        //printf("snoop out invalid\n");
+        unsigned long long outTS = (sets[setID].line[lineID].tag << config_.set_bit) + setID;
+        snoop.ts2line.erase(outTS);
+    }
+    //if (addr == 0x00007f17fad83554) cout<<"update snoop map\n";
+    if (layer == 1) {
+        snoop.ts2line[getTagAndSet(addr)] = lineID;
+        /*if (core == 1 && addr == 0x00007f17fa7896a0 && stats_.access_counter == 653) {
+            cout<<core<<" "<<read<<" "<<addr<<" "<<ifPrefetch<<endl;
+        }*/
+        snoop.missSpread(core, read, addr, ifPrefetch);
+    }
     unsigned long long nowAddr = addr - blockID;
-    lower_->HandleRequest(nowAddr, config_.block_size, 1, (char*)sets[setID].line[lineID].block, hit, totalCycle, ifPrefetch, 0);
+    //miss了取line 先要进行filter工作，再handlerequest
+    //if (addr == 0x00007f17fad83554) printf("missSpread done\n");
+
+    lower_->HandleRequest(nowAddr, bytes, 1, (char*)sets[setID].line[lineID].block, ifPrefetch, 0);
+    //if (addr == 0x00007f17fad83554) printf("mdss\n");
     stats_.fetch_num++;
-    // TODO: prefetch flag
-    sets[setID].line[lineID].valid = 1;
     sets[setID].line[lineID].tag = tmpTag;
-    
+    if (layer == 2) sets[setID].line[lineID].valid = EXCLUSIVE;
+
     if(!read) {
         for(int i = 0; i < bytes; i++) {
             sets[setID].line[lineID].block[blockID + i] = content[i];
@@ -243,18 +262,18 @@ void Cache::ReplaceAlgorithm(uint64_t addr, int bytes, int read,
         }
         sets[setID].line[lineID].dirty = 0;
     }
+    //if (addr == 0x00007f17fad83554) printf("replace finished\n");
+    
 }
 
 int Cache::PrefetchDecision(unsigned long long addr, int miss) {
-    return miss;
-    //return 0;
+    return config_.if_prefetch ? miss : 0;
 }
 
 void Cache::PrefetchAlgorithm(unsigned long long addr, int miss) {
-    char prefetchContent[64];
-    int prefetchHit = 0, prefetchCycle = 0;
+    char prefetchContent[config_.block_size];
     for(int i = 1; i < config_.prefetchNum; i++) {
-        HandleRequest(addr + 64 * i, 0, 2, prefetchContent, prefetchHit, prefetchCycle, 1, 0);
+        HandleRequest(((addr + config_.block_size * i) >> config_.block_bit) << config_.block_bit, config_.block_size, 1, prefetchContent, 1, 0);
     }
 }
 

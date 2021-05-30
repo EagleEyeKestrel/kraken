@@ -3,19 +3,18 @@
 
 #include <stdint.h>
 #include "storage.h"
+#include "co_filter.h"
 #include <cmath>
 #include <utility>
 #include <vector>
-#include <cstring>
+#include <string>
 using namespace std;
 
 struct Line {
     int valid;
     unsigned long long tag;
     int dirty;
-    int last_visit;
     unsigned char* block;
-    int ifPrefetch;
     int visit_count;
 };
 
@@ -32,10 +31,11 @@ struct CacheConfig {
     int block_size;
     int set_bit, block_bit;
     int prefetchNum;
+    int if_prefetch;
     string replacePolicy;
     
     CacheConfig() {}
-    CacheConfig(int _size, int _associativity, int _set_num, int _write_through, int _write_allocate) {
+    CacheConfig(int _size, int _associativity, int _set_num, int _write_through, int _write_allocate, string _replace_policy, int _if_prefetch) {
         size = _size;
         associativity = _associativity;
         set_num = _set_num;
@@ -45,12 +45,21 @@ struct CacheConfig {
         set_bit = log2(set_num);
         block_bit = log2(block_size);
         prefetchNum = 2;
+        replacePolicy = _replace_policy;
+        if_prefetch = _if_prefetch;
     }
 };
 
 class Cache: public Storage {
 public:
-    Cache() {}
+    CoFilter snoop;
+    int core;
+    int layer;
+    Cache(int _core, Cache** p, int _layer) {
+        core = _core;
+        snoop = CoFilter(p);
+        layer = _layer;
+    }
     ~Cache() {}
 
     // Sets & Gets
@@ -59,23 +68,24 @@ public:
     void SetLower(Storage *ll) { lower_ = ll; }
     // Main access process
     void HandleRequest(uint64_t addr, int bytes, int read,
-                       char *content, int &hit, int &totalCycle, int ifPrefetch, int ifWriteDirty);
+                       char *content, int ifPrefetch, int ifWriteDirty);
 
-    // Bypassing
-    int BypassDecision(unsigned long long addr);
-    // Partitioning
-    void PartitionAlgorithm();
+
     // Replacement
     void HitUpdate(int setID, int lineID);
     std::pair<int, int> ReplaceDecision(unsigned long long addr);
     void ReplaceAlgorithm(uint64_t addr, int bytes, int read,
-                          char* content, int &hit, int &totalCycle, int ifPrefetch);
+                          char* content, int ifPrefetch);
     // Prefetching
     int PrefetchDecision(unsigned long long addr, int miss);
     void PrefetchAlgorithm(unsigned long long addr, int miss);
     inline int getSetID(unsigned long long addr);
     inline unsigned long long getTag(unsigned long long addr);
     inline int getBlockID(unsigned long long addr);
+    inline unsigned long long getTagAndSet(unsigned long long addr);
+    void selectVictimOfLRU(int setID, int &res);
+    void selectVictimOfLFU(int setID, int &res);
+    void selectVictimOfFIFO(int setID, int &res);
     int selectVictim(int setID);
 
     CacheConfig config_;
