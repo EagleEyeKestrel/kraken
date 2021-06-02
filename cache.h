@@ -5,6 +5,7 @@
 #include "storage.h"
 #include "co_filter.h"
 #include <cmath>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 #include <string>
@@ -55,10 +56,13 @@ public:
     CoFilter snoop;
     int core;
     int layer;
+    unordered_set<unsigned long long> tagSet;
+    int validLines;
     Cache(int _core, Cache** p, int _layer) {
         core = _core;
         snoop = CoFilter(p);
         layer = _layer;
+        validLines = 0;
     }
     ~Cache() {}
 
@@ -75,7 +79,7 @@ public:
     void HitUpdate(int setID, int lineID);
     std::pair<int, int> ReplaceDecision(unsigned long long addr);
     void ReplaceAlgorithm(uint64_t addr, int bytes, int read,
-                          char* content, int ifPrefetch);
+                          char* content, int ifPrefetch, int ifWriteDirty);
     // Prefetching
     int PrefetchDecision(unsigned long long addr, int miss);
     void PrefetchAlgorithm(unsigned long long addr, int miss);

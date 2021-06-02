@@ -12,6 +12,7 @@
 struct StorageStats {
     int access_counter;
     int miss_num;
+    int compulsory_miss, capacity_miss, conflict_miss;
     int replace_num; // Evict old lines
     int fetch_num; // Fetch lower layer
     int prefetch_num; // Prefetch
@@ -31,6 +32,9 @@ public:
         stats_.replace_num = 0;
         stats_.fetch_num = 0;
         stats_.prefetch_num = 0;
+        stats_.compulsory_miss = 0;
+        stats_.capacity_miss = 0;
+        stats_.conflict_miss = 0;
     }
     void GetStats(StorageStats &ss) { ss = stats_; }
 
@@ -49,6 +53,9 @@ public:
         fprintf(res, "access count: %d\n", stats_.access_counter);
         fprintf(res, "hit count: %d\n", stats_.access_counter - stats_.miss_num);
         fprintf(res, "miss count: %d\n", stats_.miss_num);
+        fprintf(res, "compulsory miss count: %d\n", stats_.compulsory_miss);
+        fprintf(res, "capacity miss count: %d\n", stats_.capacity_miss);
+        fprintf(res, "conflict miss count: %d\n", stats_.conflict_miss);
         fprintf(res, "miss rate: %lf\n", (double)stats_.miss_num / stats_.access_counter);
     }
 };

@@ -56,6 +56,7 @@ void Cache::SetConfig(CacheConfig cc) {
 //content is write content or read buffer
 void Cache::HandleRequest(uint64_t addr, int bytes, int read,
                           char *content, int ifPrefetch, int ifWriteDirty) {
+    unsigned long long ts = getTagAndSet(addr);
     if(!ifPrefetch && !ifWriteDirty) {
         total_count++;
         stats_.access_counter++;
@@ -75,27 +76,38 @@ void Cache::HandleRequest(uint64_t addr, int bytes, int read,
     }*/
 //if (addr == 0x00007f17fad83554) cout<<"prefetching\n";
     pair<int, int> tmpRes = ReplaceDecision(addr);
-
         if(tmpRes.first) {
-            //if (addr == 0x00007f17fad83554) cout<<"miss\n";
-            if(!ifPrefetch && !ifWriteDirty) stats_.miss_num++;
-            ReplaceAlgorithm(addr, bytes, read, content, ifPrefetch);
+            //cout<<layer<<" "<<ifPrefetch<<" "<<"miss\n";
+
+            if(!ifPrefetch && !ifWriteDirty) {
+                stats_.miss_num++;
+                if (tagSet.count(ts)) {
+                    if (validLines == config_.set_num * config_.associativity) stats_.capacity_miss++;
+                    else stats_.conflict_miss++;
+                } else {
+                    stats_.compulsory_miss++;
+                }
+                
+            }
+            ReplaceAlgorithm(addr, bytes, read, content, ifPrefetch, ifWriteDirty);
         } else {
-            //if (addr == 0x00007f17fad83554) cout<<"hit\n";
+            //cout<<layer<<" "<<ifPrefetch<<" "<<"hit\n";
             if (layer == 1) snoop.hitSpread(core, read, addr, ifPrefetch);
             int setID = getSetID(addr);
             int lineID = tmpRes.second;
             int blockID = getBlockID(addr);
-            
             if(read == 1) {
                 memcpy(content, sets[setID].line[lineID].block + blockID, bytes);
             }
             if(read == 0) {
+                //cout<<setID<<" "<<lineID<<" "<<blockID<<" "<<bytes<<endl;
                 memcpy(sets[setID].line[lineID].block + blockID, content, bytes);
                 sets[setID].line[lineID].dirty = 1;
             }
         }
-    //if (addr == 0x00007f17fad83514) cout<<"herehere\n";
+    if (!tagSet.count(ts)) {
+        tagSet.insert(ts);
+    }
     if(!ifPrefetch && PrefetchDecision(addr, tmpRes.first)) {
         stats_.prefetch_num++;
         PrefetchAlgorithm(addr, tmpRes.first);
@@ -211,7 +223,7 @@ int Cache::selectVictim(int setID) {
 }
 
 void Cache::ReplaceAlgorithm(uint64_t addr, int bytes, int read,
-                            char *content, int ifPrefetch){
+                            char *content, int ifPrefetch, int ifWriteDirty){
     
     unsigned long long tmpTag = getTag(addr);
 
@@ -228,6 +240,9 @@ void Cache::ReplaceAlgorithm(uint64_t addr, int bytes, int read,
         lower_->HandleRequest(dirtyAddr, config_.block_size, 0, (char*)sets[setID].line[lineID].block, ifPrefetch, 1);
     }
     
+    if (!ifPrefetch && !ifWriteDirty && sets[setID].line[lineID].valid == INVALID) {
+        validLines++;
+    }
     if (layer == 1 && sets[setID].line[lineID].valid != INVALID) {
         //printf("snoop out invalid\n");
         unsigned long long outTS = (sets[setID].line[lineID].tag << config_.set_bit) + setID;

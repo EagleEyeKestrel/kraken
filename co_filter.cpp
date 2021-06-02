@@ -30,6 +30,7 @@ void CoFilter::hitSpread(int core, int read, uint64_t addr, int ifPrefetch) {
                 if (i == core || !l1[i]->snoop.ts2line.count(ts)) continue;
                 if (l1[i]->sets[setID].line[l1[i]->snoop.ts2line[ts]].valid != INVALID) {
                     l1[i]->sets[setID].line[l1[i]->snoop.ts2line[ts]].valid = INVALID;
+                    l1[i]->validLines--;
                 }
             }
         }
@@ -86,6 +87,7 @@ void CoFilter::missSpread(int core, int read, uint64_t addr, int ifPrefetch) {
         l1[core]->sets[setID].line[l1[core]->snoop.ts2line[ts]].valid = MODIFIED;
         for (int i: toBeUpdated) {
             l1[i]->sets[setID].line[l1[i]->snoop.ts2line[ts]].valid = INVALID;
+            l1[i]->validLines--;
         }
         
     }

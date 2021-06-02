@@ -2,6 +2,7 @@
 #include <fstream>
 #include <stdio.h>
 #include <vector>
+#include <cstring>
 #include "cache.h"
 #include "memory.h"
 #include "reader.h"
@@ -14,7 +15,7 @@ int num_cores;
 
 void readConfig() {
     std::fstream config_file;
-    config_file.open("./Config.txt");
+    config_file.open("./config.txt");
     if (!config_file.is_open()) {
         printf("Open file error! Couldn't find config file.\n");
         exit(1);
@@ -75,8 +76,10 @@ int main(int argc, const char* argv[]) {
     int cnt = 0, iter;
     unsigned long long addr;
     int sz = 1, _core;
+    int content_size = L1_size / (L1_assoc * L1_set_num);
+    //cout<<content_size<<endl;
     char method[10];
-    char content[64];
+    char content[content_size];
     int r = 0, w = 0;
     
 
@@ -96,7 +99,7 @@ int main(int argc, const char* argv[]) {
             int read = method[0] == 'r';
             unsigned long long nowMask = addr >> l1_config.block_bit, nowAddr = addr;
             while (nowAddr < addr + sz) {
-                int _bytes = 64 - (nowAddr & (l1[_core]->config_.block_size - 1));
+                int _bytes = (l1_config.block_size) - (nowAddr & (l1[_core]->config_.block_size - 1));
                 //printf("%d: %016llx, %d\n", cnt, nowAddr, _bytes);
                 l1[_core]->HandleRequest(nowAddr, _bytes, read, content, 0, 0);
                 nowAddr = ((nowAddr >> l1_config.block_bit) + 1) << l1_config.block_bit;

@@ -4,8 +4,8 @@ L1 set num: 64
 L1 write through: 0
 L1 write allocate: 1
 L2 size: 8388608
-L2 associativity: 8
-L2 set num: 16384
+L2 associativity: 16
+L2 set num: 8192
 L2 write through: 0
 L2 write allocate: 1
 Replace policy: LRU
