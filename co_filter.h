@@ -27,8 +27,8 @@ public:
         l1 = c;
         ts2line.clear();
     }
-    void hitSpread(int core, int read, uint64_t addr, int ifPrefetch);
-    void missSpread(int core, int read, uint64_t addr, int ifPrefetch);
+    void hitSpread(int core, int read, uint64_t addr, int bytes, int ifPrefetch);
+    void missSpread(int core, int read, uint64_t addr, int bytes, int ifPrefetch);
     
 };
 

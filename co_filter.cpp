@@ -13,7 +13,7 @@
 #include "reader.h"
 using namespace std;
 
-void CoFilter::hitSpread(int core, int read, uint64_t addr, int ifPrefetch) {
+void CoFilter::hitSpread(int core, int read, uint64_t addr, int bytes, int ifPrefetch) {
     int setID = l1[core]->getSetID(addr);
     unsigned long long ts = l1[core]->getTagAndSet(addr);
     
@@ -30,7 +30,13 @@ void CoFilter::hitSpread(int core, int read, uint64_t addr, int ifPrefetch) {
                 if (i == core || !l1[i]->snoop.ts2line.count(ts)) continue;
                 if (l1[i]->sets[setID].line[l1[i]->snoop.ts2line[ts]].valid != INVALID) {
                     l1[i]->sets[setID].line[l1[i]->snoop.ts2line[ts]].valid = INVALID;
+                    l1[i]->snoop.ts2line.erase(ts);
                     l1[i]->validLines--;
+                    record rc;
+                    rc.addr = addr;
+                    rc.sz = bytes;
+                    l1[i]->recordMap[ts] = rc;
+                    l1[i]->stats_.invalidations++;
                 }
             }
         }
@@ -41,7 +47,7 @@ void CoFilter::hitSpread(int core, int read, uint64_t addr, int ifPrefetch) {
     }
 }
 
-void CoFilter::missSpread(int core, int read, uint64_t addr, int ifPrefetch) {
+void CoFilter::missSpread(int core, int read, uint64_t addr, int bytes, int ifPrefetch) {
     int setID = l1[core]->getSetID(addr);
     unsigned long long ts = l1[core]->getTagAndSet(addr);
     if (read) {
@@ -87,7 +93,13 @@ void CoFilter::missSpread(int core, int read, uint64_t addr, int ifPrefetch) {
         l1[core]->sets[setID].line[l1[core]->snoop.ts2line[ts]].valid = MODIFIED;
         for (int i: toBeUpdated) {
             l1[i]->sets[setID].line[l1[i]->snoop.ts2line[ts]].valid = INVALID;
+            l1[i]->snoop.ts2line.erase(ts);
             l1[i]->validLines--;
+            record rc;
+            rc.addr = addr;
+            rc.sz = bytes;
+            l1[i]->recordMap[ts] = rc;
+            l1[i]->stats_.invalidations++;
         }
         
     }

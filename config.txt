@@ -10,4 +10,4 @@ L2 write through: 0
 L2 write allocate: 1
 Replace policy: LRU
 If Prefetch: 1
-Num Cores: 1
+Num Cores: 3

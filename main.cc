@@ -100,6 +100,7 @@ int main(int argc, const char* argv[]) {
             unsigned long long nowMask = addr >> l1_config.block_bit, nowAddr = addr;
             while (nowAddr < addr + sz) {
                 int _bytes = (l1_config.block_size) - (nowAddr & (l1[_core]->config_.block_size - 1));
+                _bytes = min(_bytes, sz);
                 //printf("%d: %016llx, %d\n", cnt, nowAddr, _bytes);
                 l1[_core]->HandleRequest(nowAddr, _bytes, read, content, 0, 0);
                 nowAddr = ((nowAddr >> l1_config.block_bit) + 1) << l1_config.block_bit;

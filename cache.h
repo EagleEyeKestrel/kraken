@@ -6,6 +6,7 @@
 #include "co_filter.h"
 #include <cmath>
 #include <unordered_set>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 #include <string>
@@ -21,6 +22,11 @@ struct Line {
 
 struct SET {
     Line* line;
+};
+
+struct record {
+    unsigned long long addr;
+    int sz;
 };
 
 struct CacheConfig {
@@ -58,6 +64,7 @@ public:
     int layer;
     unordered_set<unsigned long long> tagSet;
     int validLines;
+    unordered_map<unsigned long long, record> recordMap;
     Cache(int _core, Cache** p, int _layer) {
         core = _core;
         snoop = CoFilter(p);
@@ -91,6 +98,10 @@ public:
     void selectVictimOfLFU(int setID, int &res);
     void selectVictimOfFIFO(int setID, int &res);
     int selectVictim(int setID);
+    
+    int checkCapacityMiss();
+    int checkConflictMiss(uint64_t addr);
+    int checkFalseSharing(uint64_t addr, int bytes);
 
     CacheConfig config_;
     Storage *lower_;

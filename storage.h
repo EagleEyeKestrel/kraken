@@ -13,9 +13,11 @@ struct StorageStats {
     int access_counter;
     int miss_num;
     int compulsory_miss, capacity_miss, conflict_miss;
+    int false_sharing;
     int replace_num; // Evict old lines
     int fetch_num; // Fetch lower layer
     int prefetch_num; // Prefetch
+    int invalidations;
 };
 
 
@@ -35,6 +37,8 @@ public:
         stats_.compulsory_miss = 0;
         stats_.capacity_miss = 0;
         stats_.conflict_miss = 0;
+        stats_.false_sharing = 0;
+        stats_.invalidations = 0;
     }
     void GetStats(StorageStats &ss) { ss = stats_; }
 
@@ -56,6 +60,8 @@ public:
         fprintf(res, "compulsory miss count: %d\n", stats_.compulsory_miss);
         fprintf(res, "capacity miss count: %d\n", stats_.capacity_miss);
         fprintf(res, "conflict miss count: %d\n", stats_.conflict_miss);
+        fprintf(res, "false sharing count: %d\n", stats_.false_sharing);
+        fprintf(res, "invalidations count: %d\n", stats_.invalidations);
         fprintf(res, "miss rate: %lf\n", (double)stats_.miss_num / stats_.access_counter);
     }
 };

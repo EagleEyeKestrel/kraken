@@ -53,6 +53,42 @@ void Cache::SetConfig(CacheConfig cc) {
     }
 }
 
+int Cache::checkCapacityMiss() {
+    return validLines == config_.set_num * config_.associativity;
+}
+
+int Cache::checkConflictMiss(uint64_t addr) {
+    int fullFlag = 1;
+    int setID = getSetID(addr);
+    unsigned long long tag = getTag(addr);
+    for (int j = 0; j < config_.associativity; j++) {
+        if (sets[setID].line[j].valid == INVALID) {
+            fullFlag = 0;
+            break;
+        }
+    }
+    return fullFlag;
+}
+
+int Cache::checkFalseSharing(uint64_t addr, int bytes) {
+    int setID = getSetID(addr);
+    unsigned long long tag = getTag(addr);
+    unsigned long long ts = getTagAndSet(addr);
+    int lineID = -1;
+    for (int j = 0; j < config_.associativity; j++) {
+        if (sets[setID].line[j].valid == INVALID && sets[setID].line[j].tag == tag) {
+            lineID = j;
+            break;
+        }
+    }
+    if (lineID == -1) return 0;
+    //printf("%016llx %d\n", addr, bytes);
+    record tmp = recordMap[ts];
+    unsigned long long l1 = addr, r1 = addr + bytes - 1;
+    unsigned long long l2 = tmp.addr, r2 = tmp.addr + tmp.sz - 1;
+    return r1 < l2 || r2 < l1;
+}
+
 //content is write content or read buffer
 void Cache::HandleRequest(uint64_t addr, int bytes, int read,
                           char *content, int ifPrefetch, int ifWriteDirty) {
@@ -61,38 +97,29 @@ void Cache::HandleRequest(uint64_t addr, int bytes, int read,
         total_count++;
         stats_.access_counter++;
     }
-    /*if (getSetID(addr) == 40 && stats_.miss_num > 2000) {
-        printf("0x%llx %d\n", addr, stats_.miss_num);
-        for (int j = 0; j < config_.associativity; j++) {
-            printf("%d 0x%llx %d\n", j, sets[40].line[j].tag, sets[40].line[j].valid);
-        }
-        cout<<endl;
-    }*/
-    /*if (addr == 0x00007f17faf5fa10 && stats_.miss_num == 2221) {
-        for (int j = 0; j < config_.associativity; j++) {
-            printf("%d 0x%llx %d\n", j, sets[40].line[j].tag, sets[40].line[j].valid);
-        }
-        cout<<endl;
-    }*/
-//if (addr == 0x00007f17fad83554) cout<<"prefetching\n";
     pair<int, int> tmpRes = ReplaceDecision(addr);
         if(tmpRes.first) {
+
             //cout<<layer<<" "<<ifPrefetch<<" "<<"miss\n";
 
             if(!ifPrefetch && !ifWriteDirty) {
                 stats_.miss_num++;
                 if (tagSet.count(ts)) {
-                    if (validLines == config_.set_num * config_.associativity) stats_.capacity_miss++;
-                    else stats_.conflict_miss++;
+                    if (checkFalseSharing(addr, bytes)) {
+                        stats_.false_sharing++;
+                    } else if (checkCapacityMiss()) {
+                        stats_.capacity_miss++;
+                    } else if (checkConflictMiss(addr)){
+                        stats_.conflict_miss++;
+                    }
                 } else {
                     stats_.compulsory_miss++;
                 }
-                
             }
             ReplaceAlgorithm(addr, bytes, read, content, ifPrefetch, ifWriteDirty);
         } else {
             //cout<<layer<<" "<<ifPrefetch<<" "<<"hit\n";
-            if (layer == 1) snoop.hitSpread(core, read, addr, ifPrefetch);
+            if (layer == 1) snoop.hitSpread(core, read, addr, bytes, ifPrefetch);
             int setID = getSetID(addr);
             int lineID = tmpRes.second;
             int blockID = getBlockID(addr);
@@ -104,6 +131,7 @@ void Cache::HandleRequest(uint64_t addr, int bytes, int read,
                 memcpy(sets[setID].line[lineID].block + blockID, content, bytes);
                 sets[setID].line[lineID].dirty = 1;
             }
+            
         }
     if (!tagSet.count(ts)) {
         tagSet.insert(ts);
@@ -254,7 +282,7 @@ void Cache::ReplaceAlgorithm(uint64_t addr, int bytes, int read,
         /*if (core == 1 && addr == 0x00007f17fa7896a0 && stats_.access_counter == 653) {
             cout<<core<<" "<<read<<" "<<addr<<" "<<ifPrefetch<<endl;
         }*/
-        snoop.missSpread(core, read, addr, ifPrefetch);
+        snoop.missSpread(core, read, addr, bytes, ifPrefetch);
     }
     unsigned long long nowAddr = addr - blockID;
     //miss了取line 先要进行filter工作，再handlerequest
