@@ -52,9 +52,6 @@ void CoFilter::missSpread(int core, int read, uint64_t addr, int bytes, int ifPr
     unsigned long long ts = l1[core]->getTagAndSet(addr);
     if (read) {
         //  read miss, update other cores
-        /*if (core == 1 && addr == 0x00007f17fa7896a0) {
-            cout<<"miss\n";
-        }*/
         vector<int> toBeUpdated;
         int modifiedFlag = 0;
         for (int i = 0; i < num_cores; i++) {
@@ -65,9 +62,6 @@ void CoFilter::missSpread(int core, int read, uint64_t addr, int bytes, int ifPr
                 if (nowflag == MODIFIED) modifiedFlag = 1;
             }
         }
-        /*if (core == 1 && addr == 0x00007f17fa7896a0) {
-            cout<<toBeUpdated.size()<<endl;
-        }*/
         if (toBeUpdated.empty()) {
             l1[core]->sets[setID].line[ts2line[ts]].valid = EXCLUSIVE;
         } else {

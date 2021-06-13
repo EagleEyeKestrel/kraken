@@ -77,7 +77,7 @@ int main(int argc, const char* argv[]) {
     unsigned long long addr;
     int sz = 1, _core;
     int content_size = L1_size / (L1_assoc * L1_set_num);
-    //cout<<content_size<<endl;
+
     char method[10];
     char content[content_size];
     int r = 0, w = 0;
@@ -89,27 +89,21 @@ int main(int argc, const char* argv[]) {
         exit(1);
     }
     
-    //for (int i = 1; i <= 100; i++) {
+
     fseek(trace_file, 0, SEEK_SET);
-    //while (fscanf(trace_file, "%s %llx\n", method, &addr) != EOF) {
+
     while (fscanf(trace_file, "%llx: %d, %d, %s\n", &addr, &_core, &sz, method) != EOF) {
         cnt++;
-        //printf("%d: %016llx, %d, %d\n", cnt, addr, _core, sz);
         if (!strcmp(method, "r") || !strcmp(method, "w")) {
             int read = method[0] == 'r';
             unsigned long long nowMask = addr >> l1_config.block_bit, nowAddr = addr;
             while (nowAddr < addr + sz) {
                 int _bytes = (l1_config.block_size) - (nowAddr & (l1[_core]->config_.block_size - 1));
                 _bytes = min(_bytes, sz);
-                //printf("%d: %016llx, %d\n", cnt, nowAddr, _bytes);
                 l1[_core]->HandleRequest(nowAddr, _bytes, read, content, 0, 0);
                 nowAddr = ((nowAddr >> l1_config.block_bit) + 1) << l1_config.block_bit;
             }
         }
-        /*FILE* log = fopen("mylog.txt", "a+");
-        fprintf(log, "core%d 0x%016llx: hit: %d, miss: %d\n", _core, addr, l1[_core]->stats_.access_counter - l1[_core]->stats_.miss_num, l1[_core]->stats_.miss_num);
-        fclose(log);*/
-                
     }
     double miss1, miss2, tmp1, tmp2;
     FILE* res = fopen("res.txt", "a+");
